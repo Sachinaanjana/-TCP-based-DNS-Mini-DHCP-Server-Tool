@@ -1,0 +1,56 @@
+import socket
+
+# =====================================================================================
+ip_pool = [f"192.168.1.{i}" for i in range(10, 21)]
+assigned_ips = {}  # client_address -> assigned_ip
+
+# =====================================================================================
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server_socket.bind(("0.0.0.0", 20001))
+server_socket.listen(5)
+print("Server (DHCP + DNS) is running on port 20001...")
+
+def assign_ip(client_address):
+    """Assign an IP from the pool to the client."""
+    if client_address not in assigned_ips:
+        if ip_pool:
+            ip = ip_pool.pop(0)
+            assigned_ips[client_address] = ip
+            print(f"Assigned IP {ip} to {client_address}")
+        else:
+            assigned_ips[client_address] = None
+    return assigned_ips[client_address]
+
+while True:
+    try:
+        conn, client_address = server_socket.accept()
+        print(f"Connected: {client_address}")
+
+        # ===============================================================================
+        assigned_ip = assign_ip(client_address)
+        if assigned_ip:
+            conn.send(f"[DHCP] Your assigned IP: {assigned_ip}\n".encode())
+        else:
+            conn.send("[DHCP] No IPs available.\n".encode())
+            conn.close()
+            continue
+
+        # ===============================================================================
+        domain = conn.recv(1024).decode().strip()
+        print(f"Resolving domain '{domain}' for {assigned_ip}")
+
+        # ===============================================================================
+        try:
+            resolved_ip = socket.gethostbyname(domain)
+            response = f"[DNS] IP of {domain} is {resolved_ip}"
+        except socket.gaierror:
+            response = f"[DNS] Could not resolve {domain}"
+
+        # ===============================================================================
+        conn.send(response.encode())
+        conn.close()
+
+    except KeyboardInterrupt:
+        print("Server shutting down...")
+        server_socket.close()
+        break
